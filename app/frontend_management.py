@@ -177,7 +177,7 @@ class FrontEndProvider:
 PRECOMPRESS_EXTENSIONS = (".js", ".css", ".json", ".svg", ".html")
 
 def _brotli_compress(data: bytes) -> bytes:
-    return brotli.compress(data, quality=11)
+    return brotli.compress(data, quality=10)
 
 def _gzip_compress(data: bytes) -> bytes:
     return gzip.compress(data, 6, mtime=0)
