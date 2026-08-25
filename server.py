@@ -229,9 +229,7 @@ class PromptServer():
         self.client_session:Optional[aiohttp.ClientSession] = None
         self.number = 0
 
-        middlewares = [cache_control, deprecation_warning]
-        if args.enable_compress_response_body:
-            middlewares.append(compress_body)
+        middlewares = [cache_control, deprecation_warning, compress_body]
 
         if args.enable_cors_header:
             middlewares.append(create_cors_middleware(args.enable_cors_header))
