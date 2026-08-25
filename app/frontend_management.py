@@ -1,4 +1,5 @@
 import argparse
+import gzip
 import logging
 import os
 import re
@@ -170,6 +171,32 @@ class FrontEndProvider:
                 if release["tag_name"] in [version, f"v{version}"]:
                     return release
             raise ValueError(f"Version {version} not found in releases")
+
+
+PRECOMPRESS_EXTENSIONS = (".js", ".css", ".json", ".svg", ".html")
+
+def precompress_web_root(web_root: str) -> None:
+    """Write .gz siblings for static text assets so aiohttp's FileResponse
+    serves them compressed to clients that accept gzip."""
+    for dirpath, _, filenames in os.walk(web_root):
+        for name in filenames:
+            if not name.endswith(PRECOMPRESS_EXTENSIONS):
+                continue
+            path = os.path.join(dirpath, name)
+            gz_path = path + ".gz"
+            try:
+                if os.path.exists(gz_path) and os.path.getmtime(gz_path) >= os.path.getmtime(path):
+                    continue
+                with open(path, "rb") as f:
+                    data = f.read()
+                compressed = gzip.compress(data, 6, mtime=0)
+                if len(compressed) >= len(data):
+                    continue
+                with open(gz_path, "wb") as f:
+                    f.write(compressed)
+            except OSError as e:
+                logging.info("Skipping precompression of frontend assets: %s", e)
+                return
 
 
 def download_release_asset_zip(release: Release, destination_path: str) -> None:
@@ -426,12 +453,14 @@ comfyui-workflow-templates is not installed.
             str: The path of the initialized frontend.
         """
         try:
-            return cls.init_frontend_unsafe(version_string)
+            web_root = cls.init_frontend_unsafe(version_string)
         except Exception as e:
             logging.error("Failed to initialize frontend: %s", e)
             logging.info("Falling back to the default frontend.")
             check_comfy_packages_versions()
-            return cls.default_frontend_path()
+            web_root = cls.default_frontend_path()
+        precompress_web_root(web_root)
+        return web_root
     @classmethod
     def template_asset_handler(cls):
         assets = cls.template_asset_map()
