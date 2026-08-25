@@ -175,27 +175,29 @@ class FrontEndProvider:
 
 PRECOMPRESS_EXTENSIONS = (".js", ".css", ".json", ".svg", ".html")
 
+def gzip_sibling(path: str) -> bool:
+    """Write a .gz sibling for a static text asset so aiohttp's FileResponse
+    serves it compressed to clients that accept gzip."""
+    gz_path = path + ".gz"
+    try:
+        if os.path.exists(gz_path) and os.path.getmtime(gz_path) >= os.path.getmtime(path):
+            return True
+        with open(path, "rb") as f:
+            data = f.read()
+        compressed = gzip.compress(data, 6, mtime=0)
+        if len(compressed) < len(data):
+            with open(gz_path, "wb") as f:
+                f.write(compressed)
+        return True
+    except OSError as e:
+        logging.info("Skipping precompression of static assets: %s", e)
+        return False
+
+
 def precompress_web_root(web_root: str) -> None:
-    """Write .gz siblings for static text assets so aiohttp's FileResponse
-    serves them compressed to clients that accept gzip."""
     for dirpath, _, filenames in os.walk(web_root):
         for name in filenames:
-            if not name.endswith(PRECOMPRESS_EXTENSIONS):
-                continue
-            path = os.path.join(dirpath, name)
-            gz_path = path + ".gz"
-            try:
-                if os.path.exists(gz_path) and os.path.getmtime(gz_path) >= os.path.getmtime(path):
-                    continue
-                with open(path, "rb") as f:
-                    data = f.read()
-                compressed = gzip.compress(data, 6, mtime=0)
-                if len(compressed) >= len(data):
-                    continue
-                with open(gz_path, "wb") as f:
-                    f.write(compressed)
-            except OSError as e:
-                logging.info("Skipping precompression of frontend assets: %s", e)
+            if name.endswith(PRECOMPRESS_EXTENSIONS) and not gzip_sibling(os.path.join(dirpath, name)):
                 return
 
 
@@ -466,6 +468,10 @@ comfyui-workflow-templates is not installed.
         assets = cls.template_asset_map()
         if not assets:
             return None
+
+        for name, target in assets.items():
+            if name.endswith(".json") and not gzip_sibling(target):
+                break
 
         async def serve_template(request: web.Request) -> web.StreamResponse:
             rel_path = request.match_info.get("path", "")
