@@ -50,6 +50,10 @@ async def cache_control(
         response.headers.setdefault("Cache-Control", "no-store")
         return response
 
+    if request.path.endswith((".woff2", ".woff", ".ttf")):
+        response.headers.setdefault("Cache-Control", f"public, max-age={ONE_DAY}")
+        return response
+
     # Early return for non-image files - no cache headers needed
     if not request.path.lower().endswith(IMG_EXTENSIONS):
         return response
