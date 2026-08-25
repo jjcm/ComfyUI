@@ -19,7 +19,6 @@ from comfy_execution.jobs import (
 )
 import uuid
 import urllib
-import brotli
 import hashlib
 import json
 import glob
@@ -109,14 +108,7 @@ async def compress_body(request: web.Request, handler):
         return response
     if response.content_type not in ["application/json", "text/plain"]:
         return response
-    if not response.body:
-        return response
-    encodings = [e.split(";")[0].strip() for e in accept_encoding.split(",")]
-    if "br" in encodings and len(response.body) > 1024:
-        response.body = brotli.compress(bytes(response.body), quality=5)
-        response.headers["Content-Encoding"] = "br"
-        response.headers["Vary"] = "Accept-Encoding"
-    elif "gzip" in encodings:
+    if response.body and "gzip" in accept_encoding:
         response.enable_compression()
     return response
 
