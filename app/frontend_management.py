@@ -1,4 +1,5 @@
 import argparse
+import brotli
 import gzip
 import logging
 import os
@@ -175,25 +176,33 @@ class FrontEndProvider:
 
 PRECOMPRESS_EXTENSIONS = (".js", ".css", ".json", ".svg", ".html")
 
+def _brotli_compress(data: bytes) -> bytes:
+    return brotli.compress(data, quality=10)
+
+def _gzip_compress(data: bytes) -> bytes:
+    return gzip.compress(data, 6, mtime=0)
+
 def precompress_web_root(web_root: str) -> None:
-    """Write .gz siblings for static text assets so aiohttp's FileResponse
-    serves them compressed to clients that accept gzip."""
+    """Write .br and .gz siblings for static text assets so aiohttp's
+    FileResponse serves them compressed to clients that accept them."""
     for dirpath, _, filenames in os.walk(web_root):
         for name in filenames:
             if not name.endswith(PRECOMPRESS_EXTENSIONS):
                 continue
             path = os.path.join(dirpath, name)
-            gz_path = path + ".gz"
             try:
-                if os.path.exists(gz_path) and os.path.getmtime(gz_path) >= os.path.getmtime(path):
-                    continue
-                with open(path, "rb") as f:
-                    data = f.read()
-                compressed = gzip.compress(data, 6, mtime=0)
-                if len(compressed) >= len(data):
-                    continue
-                with open(gz_path, "wb") as f:
-                    f.write(compressed)
+                data = None
+                for sibling, compress in ((path + ".br", _brotli_compress), (path + ".gz", _gzip_compress)):
+                    if os.path.exists(sibling) and os.path.getmtime(sibling) >= os.path.getmtime(path):
+                        continue
+                    if data is None:
+                        with open(path, "rb") as f:
+                            data = f.read()
+                    compressed = compress(data)
+                    if len(compressed) >= len(data):
+                        continue
+                    with open(sibling, "wb") as f:
+                        f.write(compressed)
             except OSError as e:
                 logging.info("Skipping precompression of frontend assets: %s", e)
                 return
