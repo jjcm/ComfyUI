@@ -348,6 +348,7 @@ class PromptServer():
             response.headers['Cache-Control'] = 'no-store, must-revalidate'
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
+            response.headers["Link"] = '</fonts/inter-latin-normal.woff2>; rel=preload; as=font; crossorigin'
             return response
 
         @routes.get("/embeddings")
