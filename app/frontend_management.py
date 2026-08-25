@@ -1,4 +1,6 @@
 import argparse
+import brotli
+import gzip
 import logging
 import os
 import re
@@ -170,6 +172,40 @@ class FrontEndProvider:
                 if release["tag_name"] in [version, f"v{version}"]:
                     return release
             raise ValueError(f"Version {version} not found in releases")
+
+
+PRECOMPRESS_EXTENSIONS = (".js", ".css", ".json", ".svg", ".html")
+
+def _brotli_compress(data: bytes) -> bytes:
+    return brotli.compress(data, quality=10)
+
+def _gzip_compress(data: bytes) -> bytes:
+    return gzip.compress(data, 6, mtime=0)
+
+def precompress_web_root(web_root: str) -> None:
+    """Write .br and .gz siblings for static text assets so aiohttp's
+    FileResponse serves them compressed to clients that accept them."""
+    for dirpath, _, filenames in os.walk(web_root):
+        for name in filenames:
+            if not name.endswith(PRECOMPRESS_EXTENSIONS):
+                continue
+            path = os.path.join(dirpath, name)
+            try:
+                data = None
+                for sibling, compress in ((path + ".br", _brotli_compress), (path + ".gz", _gzip_compress)):
+                    if os.path.exists(sibling) and os.path.getmtime(sibling) >= os.path.getmtime(path):
+                        continue
+                    if data is None:
+                        with open(path, "rb") as f:
+                            data = f.read()
+                    compressed = compress(data)
+                    if len(compressed) >= len(data):
+                        continue
+                    with open(sibling, "wb") as f:
+                        f.write(compressed)
+            except OSError as e:
+                logging.info("Skipping precompression of frontend assets: %s", e)
+                return
 
 
 def download_release_asset_zip(release: Release, destination_path: str) -> None:
@@ -426,12 +462,14 @@ comfyui-workflow-templates is not installed.
             str: The path of the initialized frontend.
         """
         try:
-            return cls.init_frontend_unsafe(version_string)
+            web_root = cls.init_frontend_unsafe(version_string)
         except Exception as e:
             logging.error("Failed to initialize frontend: %s", e)
             logging.info("Falling back to the default frontend.")
             check_comfy_packages_versions()
-            return cls.default_frontend_path()
+            web_root = cls.default_frontend_path()
+        precompress_web_root(web_root)
+        return web_root
     @classmethod
     def template_asset_handler(cls):
         assets = cls.template_asset_map()

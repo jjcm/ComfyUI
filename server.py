@@ -19,6 +19,7 @@ from comfy_execution.jobs import (
 )
 import uuid
 import urllib
+import hashlib
 import json
 import glob
 import struct
@@ -109,6 +110,23 @@ async def compress_body(request: web.Request, handler):
         return response
     if response.body and "gzip" in accept_encoding:
         response.enable_compression()
+    return response
+
+
+@web.middleware
+async def etag_json(request: web.Request, handler):
+    """Let browsers revalidate JSON API responses instead of re-downloading
+    identical bodies on every page load."""
+    response = await handler(request)
+    if request.method != "GET" or not isinstance(response, web.Response):
+        return response
+    if response.status != 200 or response.content_type != "application/json" or not response.body:
+        return response
+    etag = '"{}"'.format(hashlib.sha256(response.body).hexdigest()[:32])
+    if request.headers.get("If-None-Match") == etag:
+        return web.Response(status=304, headers={"Etag": etag})
+    response.headers["Etag"] = etag
+    response.headers.setdefault("Cache-Control", "no-cache")
     return response
 
 
@@ -229,9 +247,7 @@ class PromptServer():
         self.client_session:Optional[aiohttp.ClientSession] = None
         self.number = 0
 
-        middlewares = [cache_control, deprecation_warning]
-        if args.enable_compress_response_body:
-            middlewares.append(compress_body)
+        middlewares = [cache_control, deprecation_warning, etag_json, compress_body]
 
         if args.enable_cors_header:
             middlewares.append(create_cors_middleware(args.enable_cors_header))
