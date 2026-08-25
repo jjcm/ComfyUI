@@ -47,9 +47,7 @@ async def cache_control(
     )
 
     if request.path.endswith(".js") or request.path.endswith(".css") or is_entry_point:
-        # no-cache (unlike no-store) lets the browser revalidate with
-        # If-None-Match/If-Modified-Since and reuse unchanged files via 304.
-        response.headers.setdefault("Cache-Control", "no-cache")
+        response.headers.setdefault("Cache-Control", "no-store")
         return response
 
     # Early return for non-image files - no cache headers needed
